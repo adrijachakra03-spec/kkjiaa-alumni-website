@@ -202,7 +202,9 @@ function HomePage() {
   const [alumni, setAlumni] = useState([]);
   const [alumniLoading, setAlumniLoading] = useState(true);
   const [alumniError, setAlumniError] = useState("");
-
+const [news, setNews] = useState([]);
+const [newsLoading, setNewsLoading] = useState(true);
+const [newsError, setNewsError] = useState("");
   useEffect(() => {
     const fetchAlumni = async () => {
       try {
@@ -228,7 +230,32 @@ function HomePage() {
 
     fetchAlumni();
   }, []);
+// LOAD PUBLISHED NEWS FROM THE BACKEND
+useEffect(() => {
+  const fetchNews = async () => {
+    try {
+      if (!API_URL) {
+        throw new Error("Backend URL is not configured.");
+      }
 
+      const response = await fetch(`${API_URL}/api/news`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Could not load news.");
+      }
+
+      setNews(data.articles || []);
+    } catch (error) {
+      console.error("News loading error:", error);
+      setNewsError(error.message || "Could not load news.");
+    } finally {
+      setNewsLoading(false);
+    }
+  };
+
+  fetchNews();
+}, []);
   const [modal, setModal] = useState("");
 
   const [notice, setNotice] = useState("");
@@ -1619,55 +1646,108 @@ const [contactSubmitting, setContactSubmitting] = useState(false);
 
 
 
-        <section className="news-section section" id="news">
+        
+        
+<section className="news-section section" id="news">
+  <div className="news-heading">
+    <SectionHeading
+      eyebrow="FROM THE COMMUNITY"
+      title="Notes from our alumni circle."
+      description="A space for verified updates, community stories and future announcements."
+    />
 
-          <div className="news-heading">
+    <span className="news-icon">
+      <Newspaper size={27} />
+    </span>
+  </div>
 
-            <SectionHeading
+  {newsLoading ? (
+    <div className="news-placeholder">
+      <span className="news-placeholder-icon">
+        <CalendarDays size={22} />
+      </span>
+      <div>
+        <h3>Gathering stories from our community...</h3>
+        <p>Please wait while we load the latest updates.</p>
+      </div>
+    </div>
+  ) : newsError ? (
+    <div className="news-placeholder">
+      <span className="news-placeholder-icon">
+        <Newspaper size={22} />
+      </span>
+      <div>
+        <h3>News is temporarily unavailable.</h3>
+        <p>{newsError}</p>
+      </div>
+    </div>
+  ) : news.length === 0 ? (
+    <div className="news-placeholder">
+      <span className="news-placeholder-icon">
+        <CalendarDays size={22} />
+      </span>
+      <div>
+        <h3>Our community noticeboard is taking shape.</h3>
+        <p>
+          News and announcements will appear here once they
+          have been confirmed by the association's organizers.
+        </p>
+      </div>
+    </div>
+  ) : (
+    <div className="news-grid">
+      {news.map((article) => (
+        <article className="news-card" key={article._id}>
+          {article.coverImage && (
+            <div className="news-card-image">
+              <img
+                src={article.coverImage}
+                alt={article.title}
+                loading="lazy"
+              />
+            </div>
+          )}
 
-              eyebrow="FROM THE COMMUNITY"
-
-              title="Notes from our alumni circle."
-
-              description="A space for verified updates, community stories and future announcements."
-
-            />
-
-
-
-            <span className="news-icon"><Newspaper size={27} /></span>
-
-          </div>
-
-
-
-          <div className="news-placeholder">
-
-            <span className="news-placeholder-icon">
-
-              <CalendarDays size={22} />
-
-            </span>
-
-
-
-            <div>
-
-              <h3>Our community noticeboard is taking shape.</h3>
-
-              <p>
-
-                News and announcements will be added when they have been
-
-                confirmed by the association's organizers.
-
-              </p>
-
+          <div className="news-card-content">
+            <div className="news-card-meta">
+              <span>{article.category}</span>
+              <span>
+                {article.publishedAt
+                  ? new Date(article.publishedAt).toLocaleDateString(
+                      "en-IN",
+                      {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }
+                    )
+                  : ""}
+              </span>
             </div>
 
-          </div>
+            <h3>{article.title}</h3>
 
-        </section>
+            <p className="news-excerpt">{article.excerpt}</p>
+
+            <details className="news-read-more">
+              <summary>Read the full story →</summary>
+              <div className="news-full-content">
+                {article.content}
+              </div>
+            </details>
+          </div>
+        </article>
+      ))}
+    </div>
+  )}
+</section>
+
+
+
+
+
+
+           
 
 
 

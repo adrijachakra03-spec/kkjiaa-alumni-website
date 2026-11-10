@@ -13,7 +13,7 @@ const crypto = require("node:crypto");
 const Alumni = require("./models/Alumni");
 const ContactMessage = require("./models/ContactMessage");
 const News = require("./models/News");
-const { upload } = require("./config/cloudinary");
+const { upload, cloudinary } = require("./config/cloudinary");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -113,7 +113,26 @@ function handlePhotoUpload(req, res, next) {
     });
   });
 }
+// ==========================================
+// CLOUDINARY IMAGE CLEANUP
+// ==========================================
 
+async function deleteCloudinaryImage(publicId) {
+  if (!publicId) return;
+
+  try {
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image",
+    });
+
+    if (result.result !== "ok" && result.result !== "not found") {
+      console.warn("Cloudinary image cleanup:", result);
+    }
+  } catch (error) {
+    // Database changes should not be reversed if image cleanup fails.
+    console.error("Cloudinary image deletion failed:", error.message);
+  }
+}
 // ==========================================
 // NEWS VALIDATION
 // ==========================================
@@ -426,54 +445,96 @@ app.get("/api/admin/alumni/pending", requireAdmin, async (req, res) => {
 // ADMIN: APPROVE OR REJECT ALUMNI
 // ==========================================
 
+
 app.patch(
-  "/api/admin/alumni/:id/status",
+  "/api/admin/news/:id",
   requireAdmin,
+  handlePhotoUpload,
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { status } = req.body;
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid alumni ID.",
+          message: "Invalid news article ID.",
         });
       }
 
-      if (!["approved", "rejected"].includes(status)) {
+      const { title, excerpt, content, category, status } = req.body;
+
+      const validationError = validateNewsFields({
+        title,
+        excerpt,
+        content,
+        category,
+        status,
+      });
+
+      if (validationError) {
         return res.status(400).json({
           success: false,
-          message: "Status must be approved or rejected.",
+          message: validationError,
         });
       }
 
-      const alumni = await Alumni.findByIdAndUpdate(
-        id,
-        { $set: { status } },
-        { returnDocument: "after", runValidators: true }
-      ).select(
-        "fullName email passingYear profession currentCity profilePhotoUrl status"
-      );
+      const article = await News.findById(id);
 
-      if (!alumni) {
+      if (!article) {
         return res.status(404).json({
           success: false,
-          message: "Alumni record not found.",
+          message: "News article not found.",
         });
+      }
+
+      const previousStatus = article.status;
+      const previousImagePublicId = article.coverImagePublicId;
+      const nextStatus = status || previousStatus;
+
+      article.title = title.trim();
+      article.excerpt = excerpt.trim();
+      article.content = content.trim();
+      article.category = category;
+      article.status = nextStatus;
+
+      if (req.file) {
+        article.coverImage = req.file.path || "";
+        article.coverImagePublicId = req.file.filename || "";
+      }
+
+      if (nextStatus === "published" && previousStatus !== "published") {
+        article.publishedAt = new Date();
+      }
+
+      if (nextStatus === "draft") {
+        article.publishedAt = null;
+      }
+
+      await article.save();
+
+      // Delete the previous image only after the new article is saved.
+      if (
+        req.file &&
+        previousImagePublicId &&
+        previousImagePublicId !== article.coverImagePublicId
+      ) {
+        await deleteCloudinaryImage(previousImagePublicId);
       }
 
       return res.json({
         success: true,
-        message: `Alumni registration ${status}.`,
-        alumni,
+        message:
+          nextStatus === "published"
+            ? "News article updated successfully."
+            : "Draft updated successfully.",
+        article,
       });
     } catch (error) {
-      console.error("Alumni status update error:", error.message);
+      console.error("News update error:", error.message);
 
       return res.status(500).json({
         success: false,
-        message: "Could not update alumni status.",
+        message: "Unable to update the news article.",
       });
     }
   }
@@ -824,6 +885,7 @@ app.patch(
 // ADMIN: DELETE NEWS ARTICLE
 // ==========================================
 
+
 app.delete(
   "/api/admin/news/:id",
   requireAdmin,
@@ -838,7 +900,7 @@ app.delete(
         });
       }
 
-      const article = await News.findByIdAndDelete(id);
+      const article = await News.findById(id);
 
       if (!article) {
         return res.status(404).json({
@@ -846,6 +908,14 @@ app.delete(
           message: "News article not found.",
         });
       }
+
+      const imagePublicId = article.coverImagePublicId;
+
+      // Delete the database record first.
+      await News.deleteOne({ _id: id });
+
+      // Then clean up its Cloudinary image.
+      await deleteCloudinaryImage(imagePublicId);
 
       return res.json({
         success: true,
@@ -861,6 +931,7 @@ app.delete(
     }
   }
 );
+
 
 // ==========================================
 // HOME ROUTE
