@@ -1,7 +1,8 @@
 
 import { useEffect, useState } from "react";
 
-const API = "http://localhost:5000";
+// Uses the deployed backend URL from Vercel environment variables.
+const API = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 export default function Admin() {
   const [email, setEmail] = useState("");
@@ -17,6 +18,12 @@ export default function Admin() {
     setLoading(true);
     setError("");
 
+    if (!API) {
+      setError("Backend API URL is not configured.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(`${API}/api/admin/login`, {
         method: "POST",
@@ -25,6 +32,7 @@ export default function Admin() {
       });
 
       const data = await response.json();
+
       if (!response.ok || !data.token) {
         throw new Error(data.message || "Login failed.");
       }
@@ -50,6 +58,7 @@ export default function Admin() {
       });
 
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(data.message || "Could not load registrations.");
       }
@@ -88,11 +97,15 @@ export default function Admin() {
       );
 
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(data.message || "Could not update status.");
       }
 
-      setAlumni((current) => current.filter((person) => person._id !== id));
+      setAlumni((current) =>
+        current.filter((person) => person._id !== id)
+      );
+
       setNotice(`Registration ${status} successfully.`);
     } catch (err) {
       setError(err.message || "Could not update registration.");
@@ -153,6 +166,7 @@ export default function Admin() {
           <div style={{ fontSize: 12, letterSpacing: 2 }}>
             K K JNANADA INSTITUTION
           </div>
+
           <h1 style={{ margin: "8px 0 0", fontSize: 25 }}>
             Alumni Administration
           </h1>
@@ -191,18 +205,27 @@ export default function Admin() {
               borderRadius: 14,
             }}
           >
-            <p style={{ color: "#8b7955", letterSpacing: 2, fontSize: 12 }}>
+            <p
+              style={{
+                color: "#8b7955",
+                letterSpacing: 2,
+                fontSize: 12,
+              }}
+            >
               ADMIN PORTAL
             </p>
+
             <h2 style={{ fontSize: 29, marginTop: 8 }}>
               Welcome back
             </h2>
+
             <p style={{ color: "#687366", lineHeight: 1.6 }}>
               Sign in to review alumni registrations submitted to the
               association.
             </p>
 
             <label htmlFor="admin-email">Admin email</label>
+
             <input
               id="admin-email"
               style={styles.input}
@@ -214,6 +237,7 @@ export default function Admin() {
             />
 
             <label htmlFor="admin-password">Password</label>
+
             <input
               id="admin-password"
               style={styles.input}
@@ -225,7 +249,9 @@ export default function Admin() {
             />
 
             {error && (
-              <p role="alert" style={{ color: "#a3332a" }}>{error}</p>
+              <p role="alert" style={{ color: "#a3332a" }}>
+                {error}
+              </p>
             )}
 
             <button
@@ -254,12 +280,20 @@ export default function Admin() {
               }}
             >
               <div>
-                <p style={{ color: "#8b7955", letterSpacing: 1.5, fontSize: 12 }}>
+                <p
+                  style={{
+                    color: "#8b7955",
+                    letterSpacing: 1.5,
+                    fontSize: 12,
+                  }}
+                >
                   REGISTRATION REVIEW
                 </p>
+
                 <h2 style={{ fontSize: 30, margin: "5px 0" }}>
                   Pending alumni
                 </h2>
+
                 <p style={{ color: "#687366" }}>
                   Review each submission before approving it.
                 </p>
@@ -287,16 +321,28 @@ export default function Admin() {
               }}
             >
               <span style={{ fontSize: 13 }}>AWAITING REVIEW</span>
-              <div style={{ fontSize: 34, fontWeight: "bold", marginTop: 5 }}>
+
+              <div
+                style={{
+                  fontSize: 34,
+                  fontWeight: "bold",
+                  marginTop: 5,
+                }}
+              >
                 {alumni.length}
               </div>
             </div>
 
             {error && (
-              <p role="alert" style={{ color: "#a3332a" }}>{error}</p>
+              <p role="alert" style={{ color: "#a3332a" }}>
+                {error}
+              </p>
             )}
+
             {notice && (
-              <p role="status" style={{ color: "#294b35" }}>{notice}</p>
+              <p role="status" style={{ color: "#294b35" }}>
+                {notice}
+              </p>
             )}
 
             {loading && <p>Loading registrations...</p>}
@@ -312,6 +358,7 @@ export default function Admin() {
                 }}
               >
                 <h3>No pending registrations</h3>
+
                 <p style={{ color: "#687366" }}>
                   New submissions will appear here for review.
                 </p>
@@ -340,6 +387,7 @@ export default function Admin() {
                     <h3 style={{ fontSize: 22, margin: "0 0 12px" }}>
                       {person.fullName || person.name || "Unnamed alumnus"}
                     </h3>
+
                     <span
                       style={{
                         background: "#f3e6c9",
@@ -356,22 +404,31 @@ export default function Admin() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(190px, 1fr))",
                       gap: "12px 20px",
                       lineHeight: 1.6,
                       overflowWrap: "anywhere",
                     }}
                   >
-                    <div><strong>Email:</strong> {person.email || "—"}</div>
-                    <div><strong>Phone:</strong> {person.phone || "—"}</div>
+                    <div>
+                      <strong>Email:</strong> {person.email || "—"}
+                    </div>
+
+                    <div>
+                      <strong>Phone:</strong> {person.phone || "—"}
+                    </div>
+
                     <div>
                       <strong>Passing year:</strong>{" "}
                       {person.passingYear || "—"}
                     </div>
+
                     <div>
                       <strong>Profession:</strong>{" "}
                       {person.profession || "—"}
                     </div>
+
                     <div>
                       <strong>City:</strong> {person.currentCity || "—"}
                     </div>
@@ -383,17 +440,26 @@ export default function Admin() {
                     </p>
                   )}
 
-                  <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginTop: 20,
+                    }}
+                  >
                     <button
                       style={{
                         ...styles.button,
                         background: "#294b35",
                         color: "white",
                       }}
-                      onClick={() => updateStatus(person._id, "approved")}
+                      onClick={() =>
+                        updateStatus(person._id, "approved")
+                      }
                     >
                       Approve
                     </button>
+
                     <button
                       style={{
                         ...styles.button,
