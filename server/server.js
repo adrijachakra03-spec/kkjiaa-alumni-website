@@ -12,6 +12,7 @@ const crypto = require("node:crypto");
 
 const Alumni = require("./models/Alumni");
 const ContactMessage = require("./models/ContactMessage");
+const News = require("./models/News");
 const { upload } = require("./config/cloudinary");
 
 const app = express();
@@ -111,6 +112,50 @@ function handlePhotoUpload(req, res, next) {
       message: error.message || "Unable to upload this photo.",
     });
   });
+}
+
+// ==========================================
+// NEWS VALIDATION
+// ==========================================
+
+const NEWS_CATEGORIES = [
+  "School News",
+  "Alumni Stories",
+  "Events",
+  "Achievements",
+  "Announcements",
+];
+
+function validateNewsFields({ title, excerpt, content, category, status }) {
+  if (
+    typeof title !== "string" ||
+    !title.trim() ||
+    typeof excerpt !== "string" ||
+    !excerpt.trim() ||
+    typeof content !== "string" ||
+    !content.trim() ||
+    typeof category !== "string" ||
+    !NEWS_CATEGORIES.includes(category)
+  ) {
+    return "Please provide a title, description, article content and valid category.";
+  }
+
+  if (
+    title.trim().length > 180 ||
+    excerpt.trim().length > 400 ||
+    content.trim().length > 20000
+  ) {
+    return "The article exceeds the allowed text length.";
+  }
+
+  if (
+    status !== undefined &&
+    !["draft", "published"].includes(status)
+  ) {
+    return "Status must be draft or published.";
+  }
+
+  return null;
 }
 
 // ==========================================
@@ -261,11 +306,6 @@ app.post(
       const photoUrl = req.file?.path || "";
       const photoPublicId = req.file?.filename || "";
 
-      console.log("SAVING ALUMNI PHOTO:", {
-        hasPhotoUrl: Boolean(photoUrl),
-        hasPhotoPublicId: Boolean(photoPublicId),
-      });
-
       const alumni = await Alumni.create({
         fullName: fullName.trim(),
         email: normalizedEmail,
@@ -278,12 +318,6 @@ app.post(
         profilePhotoUrl: photoUrl,
         profilePhotoPublicId: photoPublicId,
         status: "pending",
-      });
-
-      console.log("ALUMNI PHOTO SAVE RESULT:", {
-        recordCreated: Boolean(alumni._id),
-        photoUrlSaved: Boolean(alumni.profilePhotoUrl),
-        photoPublicIdSaved: Boolean(alumni.profilePhotoPublicId),
       });
 
       return res.status(201).json({
@@ -576,6 +610,253 @@ app.patch(
       return res.status(500).json({
         success: false,
         message: "Unable to update message status.",
+      });
+    }
+  }
+);
+
+// ==========================================
+// NEWS: PUBLICLY VIEW PUBLISHED ARTICLES
+// ==========================================
+
+app.get("/api/news", async (req, res) => {
+  try {
+    const articles = await News.find({
+      status: "published",
+    })
+      .select(
+        "title excerpt content category coverImage publishedAt createdAt"
+      )
+      .sort({ publishedAt: -1, createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    return res.json({
+      success: true,
+      count: articles.length,
+      articles,
+    });
+  } catch (error) {
+    console.error("Public news fetch error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load news articles.",
+    });
+  }
+});
+
+// ==========================================
+// ADMIN: VIEW ALL NEWS (DRAFTS + PUBLISHED)
+// ==========================================
+
+app.get("/api/admin/news", requireAdmin, async (req, res) => {
+  try {
+    const articles = await News.find()
+      .sort({ updatedAt: -1 })
+      .limit(200)
+      .lean();
+
+    return res.json({
+      success: true,
+      count: articles.length,
+      articles,
+    });
+  } catch (error) {
+    console.error("Admin news fetch error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load news articles.",
+    });
+  }
+});
+
+// ==========================================
+// ADMIN: CREATE NEWS ARTICLE
+// ==========================================
+
+app.post(
+  "/api/admin/news",
+  requireAdmin,
+  handlePhotoUpload,
+  async (req, res) => {
+    try {
+      const { title, excerpt, content, category, status } = req.body;
+
+      const validationError = validateNewsFields({
+        title,
+        excerpt,
+        content,
+        category,
+        status,
+      });
+
+      if (validationError) {
+        return res.status(400).json({
+          success: false,
+          message: validationError,
+        });
+      }
+
+      const articleStatus = status || "draft";
+
+      const article = await News.create({
+        title: title.trim(),
+        excerpt: excerpt.trim(),
+        content: content.trim(),
+        category,
+        coverImage: req.file?.path || "",
+        coverImagePublicId: req.file?.filename || "",
+        status: articleStatus,
+        publishedAt:
+          articleStatus === "published" ? new Date() : null,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message:
+          articleStatus === "published"
+            ? "News article published successfully."
+            : "News article saved as a draft.",
+        article,
+      });
+    } catch (error) {
+      console.error("News creation error:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Unable to create the news article.",
+      });
+    }
+  }
+);
+
+// ==========================================
+// ADMIN: EDIT NEWS ARTICLE
+// ==========================================
+
+app.patch(
+  "/api/admin/news/:id",
+  requireAdmin,
+  handlePhotoUpload,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid news article ID.",
+        });
+      }
+
+      const { title, excerpt, content, category, status } = req.body;
+
+      const validationError = validateNewsFields({
+        title,
+        excerpt,
+        content,
+        category,
+        status,
+      });
+
+      if (validationError) {
+        return res.status(400).json({
+          success: false,
+          message: validationError,
+        });
+      }
+
+      const article = await News.findById(id);
+
+      if (!article) {
+        return res.status(404).json({
+          success: false,
+          message: "News article not found.",
+        });
+      }
+
+      const previousStatus = article.status;
+      const nextStatus = status || previousStatus;
+
+      article.title = title.trim();
+      article.excerpt = excerpt.trim();
+      article.content = content.trim();
+      article.category = category;
+      article.status = nextStatus;
+
+      if (req.file) {
+        article.coverImage = req.file.path || "";
+        article.coverImagePublicId = req.file.filename || "";
+      }
+
+      if (nextStatus === "published" && previousStatus !== "published") {
+        article.publishedAt = new Date();
+      }
+
+      if (nextStatus === "draft") {
+        article.publishedAt = null;
+      }
+
+      await article.save();
+
+      return res.json({
+        success: true,
+        message:
+          nextStatus === "published"
+            ? "News article updated successfully."
+            : "Draft updated successfully.",
+        article,
+      });
+    } catch (error) {
+      console.error("News update error:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Unable to update the news article.",
+      });
+    }
+  }
+);
+
+// ==========================================
+// ADMIN: DELETE NEWS ARTICLE
+// ==========================================
+
+app.delete(
+  "/api/admin/news/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid news article ID.",
+        });
+      }
+
+      const article = await News.findByIdAndDelete(id);
+
+      if (!article) {
+        return res.status(404).json({
+          success: false,
+          message: "News article not found.",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "News article deleted successfully.",
+      });
+    } catch (error) {
+      console.error("News deletion error:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Unable to delete the news article.",
       });
     }
   }
