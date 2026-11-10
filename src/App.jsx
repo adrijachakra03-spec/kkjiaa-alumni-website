@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Admin from "./Admin";
 import {
   Menu,
@@ -16,9 +16,10 @@ import {
   Camera,
   ShieldCheck,
   Newspaper,
-  HandCoins,
   Upload,
 } from "lucide-react";
+
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 const photos = {
   building: "/images/school-building.jpg",
@@ -102,6 +103,7 @@ function HomePage() {
   const [modal, setModal] = useState("");
   const [notice, setNotice] = useState("");
   const [photoPreview, setPhotoPreview] = useState("");
+
   const [registration, setRegistration] = useState({
     name: "",
     batch: "",
@@ -113,38 +115,19 @@ function HomePage() {
     photo: null,
     consent: false,
   });
+
   const [contact, setContact] = useState({
     name: "",
     email: "",
     message: "",
   });
+
   const [scholarship, setScholarship] = useState({
     name: "",
     email: "",
     schoolYear: "",
     reason: "",
   });
-  const [alumni, setAlumni] = useState([]);
-  const [alumniLoading, setAlumniLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchApprovedAlumni = async () => {
-      try {
-        const response = await fetch("http://localhost:5000/api/alumni/approved");
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.message || "Could not load alumni profiles.");
-        }
-        setAlumni(Array.isArray(data.alumni) ? data.alumni : []);
-      } catch (error) {
-        console.error("Failed to load approved alumni:", error);
-      } finally {
-        setAlumniLoading(false);
-      }
-    };
-
-    fetchApprovedAlumni();
-  }, []);
 
   const openModal = (name) => {
     setNotice("");
@@ -174,7 +157,12 @@ function HomePage() {
       }
 
       setPhotoPreview(URL.createObjectURL(file));
-      setRegistration((previous) => ({ ...previous, photo: file }));
+
+      setRegistration((previous) => ({
+        ...previous,
+        photo: file,
+      }));
+
       setNotice("");
       return;
     }
@@ -185,55 +173,89 @@ function HomePage() {
     }));
   };
 
-  
-const submitRegistration = async (event) => {
-  event.preventDefault();
-  setNotice("");
+  // ALUMNI REGISTRATION — CONNECTED TO RENDER BACKEND
+  const submitRegistration = async (event) => {
+    event.preventDefault();
+    setNotice("");
 
-  if (!registration.consent) {
-    setNotice("Please confirm your consent before continuing.");
-    return;
-  }
-
-  try {
-    const formData = new FormData();
-    formData.append("fullName", registration.name.trim());
-    formData.append("email", registration.email.trim());
-    formData.append("phone", registration.phone.trim());
-    if (registration.year.trim()) {
-      formData.append("passingYear", registration.year.trim());
-    }
-    formData.append("profession", registration.occupation.trim());
-    formData.append("currentCity", "");
-    formData.append("message", registration.bio.trim());
-    formData.append("consent", "true");
-    if (registration.photo) {
-      formData.append("photo", registration.photo);
+    if (!API_URL) {
+      setNotice("The server address is not configured. Please try again later.");
+      return;
     }
 
-    const response = await fetch("http://localhost:5000/api/alumni/register", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || "Registration failed.");
+    if (!registration.consent) {
+      setNotice("Please confirm your consent before continuing.");
+      return;
     }
 
-    setNotice("Registration submitted successfully! Your details are pending admin approval.");
-    setRegistration({
-      name: "", batch: "", year: "", email: "", phone: "",
-      occupation: "", bio: "", photo: null, consent: false,
-    });
-    setPhotoPreview("");
-    const fileInput = document.querySelector('input[name="photo"]');
-    if (fileInput) fileInput.value = "";
-  } catch (error) {
-    setNotice(error.message || "Could not connect to the server. Please try again.");
-  }
-};
+    const year = Number(registration.year);
 
+    if (
+      !registration.year ||
+      !Number.isInteger(year) ||
+      year < 1888 ||
+      year > new Date().getFullYear()
+    ) {
+      setNotice("Please enter a valid year attended.");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+
+      formData.append("fullName", registration.name.trim());
+      formData.append("email", registration.email.trim());
+      formData.append("phone", registration.phone.trim());
+      formData.append("passingYear", String(year));
+      formData.append("profession", registration.occupation.trim());
+      formData.append("message", registration.bio.trim());
+      formData.append("consent", "true");
+
+      if (registration.photo) {
+        formData.append("photo", registration.photo);
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/alumni/register`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Registration failed.");
+      }
+
+      setNotice(
+        "Registration submitted successfully! Your details are pending admin approval."
+      );
+
+      setRegistration({
+        name: "",
+        batch: "",
+        year: "",
+        email: "",
+        phone: "",
+        occupation: "",
+        bio: "",
+        photo: null,
+        consent: false,
+      });
+
+      setPhotoPreview("");
+
+      event.target.reset();
+    } catch (error) {
+      console.error("Registration error:", error);
+
+      setNotice(
+        error.message || "Could not connect to the server. Please try again."
+      );
+    }
+  };
 
   const submitContact = (event) => {
     event.preventDefault();
@@ -280,14 +302,11 @@ const submitRegistration = async (event) => {
 
         <nav className={`main-nav ${menuOpen ? "nav-open" : ""}`}>
           {navLinks.map(([label, href]) => (
-            <a
-              key={href}
-              href={href}
-              onClick={() => setMenuOpen(false)}
-            >
+            <a key={href} href={href} onClick={() => setMenuOpen(false)}>
               {label}
             </a>
           ))}
+
           <button
             className="button button-green nav-cta"
             onClick={() => openModal("register")}
@@ -328,6 +347,7 @@ const submitRegistration = async (event) => {
               >
                 Reconnect with us <ArrowUpRight size={17} />
               </button>
+
               <a className="text-link" href="#story">
                 Discover our story <span>↓</span>
               </a>
@@ -351,6 +371,7 @@ const submitRegistration = async (event) => {
                   );
                 }}
               />
+
               <div className="photo-caption">
                 <span className="caption-mark">✳</span>
                 <span>
@@ -359,12 +380,14 @@ const submitRegistration = async (event) => {
                 </span>
               </div>
             </div>
+
             <div className="hero-stamp" aria-hidden="true">
               <span>LEARN</span>
               <span>GROW</span>
               <span>GIVE BACK</span>
               <span className="stamp-star">✳</span>
             </div>
+
             <div className="hero-note">
               <span className="note-line" />
               <span>A little place that stays with you.</span>
@@ -382,13 +405,19 @@ const submitRegistration = async (event) => {
             <span className="eyebrow">MORE THAN A SCHOOL</span>
             <span className="intro-flower">✳</span>
           </div>
+
           <p>
             Some places become part of who we are. Our school is one of
             them. This alumni initiative is about staying connected,
             sharing what we have learned and making the road a little easier
             for the students who follow us.
           </p>
-          <a href="#community" className="round-arrow" aria-label="Read about our community">
+
+          <a
+            href="#community"
+            className="round-arrow"
+            aria-label="Read about our community"
+          >
             <ArrowUpRight size={22} />
           </a>
         </section>
@@ -405,6 +434,7 @@ const submitRegistration = async (event) => {
                   event.currentTarget.style.display = "none";
                 }}
               />
+
               <img
                 className="story-image-small"
                 src={photos.entrance}
@@ -414,6 +444,7 @@ const submitRegistration = async (event) => {
                   event.currentTarget.style.display = "none";
                 }}
               />
+
               <span className="image-side-note">A PLACE TO REMEMBER</span>
             </div>
 
@@ -503,7 +534,10 @@ const submitRegistration = async (event) => {
               title="Familiar corners. Lasting memories."
               description="A small gallery of the place that connects us. Add your real school photographs to the images folder to bring this section to life."
             />
-            <span className="gallery-aside">THE PLACE WE SHARE · EST. 1888*</span>
+
+            <span className="gallery-aside">
+              THE PLACE WE SHARE · EST. 1888*
+            </span>
           </div>
 
           <div className="photo-gallery">
@@ -518,6 +552,7 @@ const submitRegistration = async (event) => {
               />
               <figcaption>Where our stories began</figcaption>
             </figure>
+
             <figure>
               <img
                 src={photos.playground}
@@ -529,6 +564,7 @@ const submitRegistration = async (event) => {
               />
               <figcaption>Room to grow</figcaption>
             </figure>
+
             <figure>
               <img
                 src={photos.entrance}
@@ -541,6 +577,7 @@ const submitRegistration = async (event) => {
               <figcaption>A familiar welcome</figcaption>
             </figure>
           </div>
+
           <p className="gallery-footnote">
             *The school's establishment year should be verified before
             publication. The year 1888 has been reported in the school's
@@ -552,13 +589,20 @@ const submitRegistration = async (event) => {
           <div className="section directory-layout">
             <div className="directory-intro">
               <span className="eyebrow">OUR ALUMNI</span>
-              <h2>Many journeys.<br /><em>One shared beginning.</em></h2>
+
+              <h2>
+                Many journeys.
+                <br />
+                <em>One shared beginning.</em>
+              </h2>
+
               <p>
                 The alumni directory will help former students find one
                 another and discover people willing to share their
                 experiences. Profiles should only appear publicly after
                 the alum gives consent and an administrator approves them.
               </p>
+
               <button
                 className="button button-outline"
                 onClick={() => openModal("register")}
@@ -566,6 +610,7 @@ const submitRegistration = async (event) => {
               >
                 Register as an alumnus <ArrowUpRight size={16} />
               </button>
+
               <div className="privacy-note">
                 <ShieldCheck size={18} />
                 <span>Public profiles require consent and approval.</span>
@@ -575,56 +620,18 @@ const submitRegistration = async (event) => {
             <div className="directory-preview">
               <div className="directory-topline">
                 <span><Users size={17} /> ALUMNI DIRECTORY</span>
-                <span className="status-dot">
-                  {alumniLoading ? "LOADING" : `${alumni.length} APPROVED ${alumni.length === 1 ? "PROFILE" : "PROFILES"}`}
-                </span>
+                <span className="status-dot">IN DEVELOPMENT</span>
               </div>
 
-              {alumniLoading ? (
-                <div className="empty-directory" role="status">
-                  <div className="empty-icon"><Users size={28} /></div>
-                  <h3>Finding our school family…</h3>
-                  <p>Loading approved alumni profiles.</p>
-                </div>
-              ) : alumni.length === 0 ? (
-                <div className="empty-directory">
-                  <div className="empty-icon"><Users size={28} /></div>
-                  <h3>Your school family starts here.</h3>
-                  <p>
-                    No approved public profiles yet. Once an alumnus registers,
-                    gives consent and is approved by an administrator, their
-                    profile can appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="alumni-cards">
-                  {alumni.map((person) => (
-                    <article className="alumni-card" key={person._id || person.email || `${person.fullName}-${person.passingYear}`}>
-                      {person.profilePhotoUrl ? (
-                        <img
-                          className="alumni-card-photo"
-                          src={person.profilePhotoUrl}
-                          alt={`${person.fullName}'s profile`}
-                          loading="lazy"
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="alumni-card-avatar" aria-hidden="true">
-                          <Users size={25} />
-                        </div>
-                      )}
-                      <div className="alumni-card-info">
-                        <h3>{person.fullName}</h3>
-                        {person.passingYear && <p className="alumni-card-year">Class of {person.passingYear}</p>}
-                        {person.profession && <p>{person.profession}</p>}
-                        {person.currentCity && <p className="alumni-card-city"><MapPin size={14} /> {person.currentCity}</p>}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
+              <div className="empty-directory">
+                <div className="empty-icon"><Users size={28} /></div>
+                <h3>Your school family starts here.</h3>
+                <p>
+                  Alumni profiles will appear here after verification and
+                  approval. Register above to express your interest in
+                  joining the community.
+                </p>
+              </div>
 
               <div className="directory-bottomline">
                 <span>CONSENT FIRST</span>
@@ -641,6 +648,7 @@ const submitRegistration = async (event) => {
               title="Small steps. Shared purpose."
               description="Community activities can start with a conversation. Help us shape meaningful meet-ups, mentoring and student-support initiatives."
             />
+
             <a href="#contact" className="text-link">
               Suggest an activity <span>→</span>
             </a>
@@ -653,10 +661,12 @@ const submitRegistration = async (event) => {
                   <strong>{event.date}</strong>
                   <span>{event.month}</span>
                 </div>
+
                 <div className="event-content">
                   <span className="eyebrow">{event.type}</span>
                   <h3>{event.title}</h3>
                   <p>{event.description}</p>
+
                   <a
                     href="#contact"
                     className="event-link"
@@ -668,6 +678,7 @@ const submitRegistration = async (event) => {
               </article>
             ))}
           </div>
+
           <p className="section-footnote">
             These are proposed community activities, not confirmed events.
             Dates are illustrative and should be replaced before publishing.
@@ -678,13 +689,20 @@ const submitRegistration = async (event) => {
           <div className="section support-layout">
             <div className="support-copy">
               <span className="eyebrow">LOOKING AHEAD</span>
-              <h2>Someone helped us get here.<br /><em>We can help someone next.</em></h2>
+
+              <h2>
+                Someone helped us get here.
+                <br />
+                <em>We can help someone next.</em>
+              </h2>
+
               <p>
                 Alumni can make a difference by sharing guidance, helping
                 students understand their options, contributing learning
                 materials or supporting carefully managed scholarship
                 initiatives.
               </p>
+
               <button
                 className="button button-cream"
                 onClick={() => openModal("volunteer")}
@@ -700,7 +718,9 @@ const submitRegistration = async (event) => {
                 onClick={() => openModal("volunteer")}
                 type="button"
               >
-                <span className="support-option-icon"><HeartHandshake size={22} /></span>
+                <span className="support-option-icon">
+                  <HeartHandshake size={22} />
+                </span>
                 <span>
                   <strong>Mentorship & volunteering</strong>
                   <small>Share your time, skills or career experience.</small>
@@ -713,7 +733,9 @@ const submitRegistration = async (event) => {
                 onClick={() => openModal("scholarship")}
                 type="button"
               >
-                <span className="support-option-icon"><GraduationCap size={22} /></span>
+                <span className="support-option-icon">
+                  <GraduationCap size={22} />
+                </span>
                 <span>
                   <strong>Student scholarships</strong>
                   <small>Help shape a fair, transparent support process.</small>
@@ -722,7 +744,9 @@ const submitRegistration = async (event) => {
               </button>
 
               <a className="support-option" href="#contact">
-                <span className="support-option-icon"><BookOpen size={22} /></span>
+                <span className="support-option-icon">
+                  <BookOpen size={22} />
+                </span>
                 <span>
                   <strong>Learning resources</strong>
                   <small>Suggest books, materials or useful opportunities.</small>
@@ -740,10 +764,15 @@ const submitRegistration = async (event) => {
               title="Notes from our alumni circle."
               description="A space for verified updates, community stories and future announcements."
             />
+
             <span className="news-icon"><Newspaper size={27} /></span>
           </div>
+
           <div className="news-placeholder">
-            <span className="news-placeholder-icon"><CalendarDays size={22} /></span>
+            <span className="news-placeholder-icon">
+              <CalendarDays size={22} />
+            </span>
+
             <div>
               <h3>Our community noticeboard is taking shape.</h3>
               <p>
@@ -758,18 +787,28 @@ const submitRegistration = async (event) => {
           <div className="section contact-layout">
             <div className="contact-copy">
               <span className="eyebrow">LET'S START A CONVERSATION</span>
-              <h2>Have a story to share?<br /><em>We'd love to hear it.</em></h2>
+
+              <h2>
+                Have a story to share?
+                <br />
+                <em>We'd love to hear it.</em>
+              </h2>
+
               <p>
                 Want to reconnect, volunteer, share a school memory or
                 suggest an initiative? Send us a message.
               </p>
+
               <div className="contact-detail">
                 <MapPin size={18} />
                 <span>
                   K. K. Jnanada Institution
-                  <small>Gopalnagar, Nangulpara, Khanakul, Hooghly, West Bengal, India</small>
+                  <small>
+                    Gopalnagar, Nangulpara, Khanakul, Hooghly, West Bengal, India
+                  </small>
                 </span>
               </div>
+
               <div className="contact-detail">
                 <Mail size={18} />
                 <span>
@@ -777,6 +816,7 @@ const submitRegistration = async (event) => {
                   <small>Add a verified association email before launch.</small>
                 </span>
               </div>
+
               <div className="contact-detail">
                 <Phone size={18} />
                 <span>
@@ -788,6 +828,7 @@ const submitRegistration = async (event) => {
 
             <form className="contact-form" onSubmit={submitContact}>
               <span className="eyebrow">SEND A MESSAGE</span>
+
               <label>
                 Your name
                 <input
@@ -800,6 +841,7 @@ const submitRegistration = async (event) => {
                   placeholder="How should we address you?"
                 />
               </label>
+
               <label>
                 Email address
                 <input
@@ -813,6 +855,7 @@ const submitRegistration = async (event) => {
                   placeholder="you@example.com"
                 />
               </label>
+
               <label>
                 Your message
                 <textarea
@@ -826,12 +869,15 @@ const submitRegistration = async (event) => {
                   placeholder="Tell us what you have in mind..."
                 />
               </label>
+
               <button className="button button-green button-full" type="submit">
                 Send message <ArrowUpRight size={17} />
               </button>
+
               <p className="form-small">
                 Prototype form: your message is not sent or stored yet.
               </p>
+
               {notice && modal === "" && (
                 <p className="form-notice" role="status">{notice}</p>
               )}
@@ -848,11 +894,18 @@ const submitRegistration = async (event) => {
             <small>ALUMNI ASSOCIATION</small>
           </span>
         </a>
+
         <p>Made with care for the people and memories that connect us.</p>
-        <a href="#home" className="back-to-top">Back to top ↑</a>
+
+        <a href="#home" className="back-to-top">
+          Back to top ↑
+        </a>
+
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} KKJIAA Alumni Initiative</span>
-          <span>Independent alumni initiative · Not the school's administration</span>
+          <span>
+            Independent alumni initiative · Not the school's administration
+          </span>
         </div>
       </footer>
 
@@ -873,6 +926,7 @@ const submitRegistration = async (event) => {
                 placeholder="Your full name"
               />
             </label>
+
             <div className="form-two-col">
               <label>
                 Batch / class
@@ -883,17 +937,22 @@ const submitRegistration = async (event) => {
                   placeholder="e.g. Class X"
                 />
               </label>
+
               <label>
-                Year attended
+                Year attended *
                 <input
                   name="year"
+                  type="number"
+                  required
+                  min="1888"
+                  max={new Date().getFullYear()}
                   value={registration.year}
                   onChange={updateRegistration}
-                  inputMode="numeric"
                   placeholder="e.g. 2018"
                 />
               </label>
             </div>
+
             <label>
               Email address *
               <input
@@ -905,6 +964,7 @@ const submitRegistration = async (event) => {
                 placeholder="you@example.com"
               />
             </label>
+
             <label>
               Phone number (optional)
               <input
@@ -915,6 +975,7 @@ const submitRegistration = async (event) => {
                 placeholder="Your phone number"
               />
             </label>
+
             <label>
               Current work / studies (optional)
               <input
@@ -924,6 +985,7 @@ const submitRegistration = async (event) => {
                 placeholder="What are you doing now?"
               />
             </label>
+
             <label>
               A little about yourself (optional)
               <textarea
@@ -934,13 +996,17 @@ const submitRegistration = async (event) => {
                 placeholder="Share what you would like fellow alumni to know."
               />
             </label>
+
             <label className="upload-label">
               <span className="upload-icon"><Camera size={20} /></span>
+
               <span>
                 <strong>Profile photo (optional)</strong>
                 <small>Choose an image from your device, up to 5 MB.</small>
               </span>
+
               <Upload size={18} />
+
               <input
                 type="file"
                 name="photo"
@@ -948,12 +1014,14 @@ const submitRegistration = async (event) => {
                 onChange={updateRegistration}
               />
             </label>
+
             {photoPreview && (
               <div className="photo-preview">
                 <img src={photoPreview} alt="Selected profile preview" />
                 <span>{registration.photo?.name}</span>
               </div>
             )}
+
             <label className="consent-check">
               <input
                 type="checkbox"
@@ -962,21 +1030,27 @@ const submitRegistration = async (event) => {
                 onChange={updateRegistration}
                 required
               />
+
               <span>
                 I agree to have my registration reviewed. I understand
                 that my profile must not be made public without my consent
                 and administrator approval.
               </span>
             </label>
+
             <button className="button button-green button-full" type="submit">
               Submit registration interest <ArrowUpRight size={17} />
             </button>
+
             <p className="form-small">
-              Your registration and optional profile photo will be sent to the
-              server for review. Your profile will only appear publicly after
-              consent and administrator approval.
+              Your details and optional profile photo will be submitted
+              for review. Your profile will only appear after administrator
+              approval.
             </p>
-            {notice && <p className="form-notice" role="status">{notice}</p>}
+
+            {notice && (
+              <p className="form-notice" role="status">{notice}</p>
+            )}
           </form>
         </Modal>
       )}
@@ -988,13 +1062,39 @@ const submitRegistration = async (event) => {
           onClose={closeModal}
         >
           <div className="modal-info-list">
-            <div><HeartHandshake size={20} /><span><strong>Mentorship</strong><small>Offer guidance on studies, careers or skills.</small></span></div>
-            <div><BookOpen size={20} /><span><strong>Learning resources</strong><small>Suggest books, workshops or useful learning material.</small></span></div>
-            <div><Users size={20} /><span><strong>Community support</strong><small>Help organize reunions and alumni initiatives.</small></span></div>
+            <div>
+              <HeartHandshake size={20} />
+              <span>
+                <strong>Mentorship</strong>
+                <small>Offer guidance on studies, careers or skills.</small>
+              </span>
+            </div>
+
+            <div>
+              <BookOpen size={20} />
+              <span>
+                <strong>Learning resources</strong>
+                <small>Suggest books, workshops or useful learning material.</small>
+              </span>
+            </div>
+
+            <div>
+              <Users size={20} />
+              <span>
+                <strong>Community support</strong>
+                <small>Help organize reunions and alumni initiatives.</small>
+              </span>
+            </div>
           </div>
-          <a className="button button-green button-full" href="#contact" onClick={closeModal}>
+
+          <a
+            className="button button-green button-full"
+            href="#contact"
+            onClick={closeModal}
+          >
             Tell us how you'd like to help <ArrowUpRight size={17} />
           </a>
+
           <p className="form-small">
             Activities are proposals until organizers confirm them.
           </p>
@@ -1014,11 +1114,15 @@ const submitRegistration = async (event) => {
                 required
                 value={scholarship.name}
                 onChange={(event) =>
-                  setScholarship({ ...scholarship, name: event.target.value })
+                  setScholarship({
+                    ...scholarship,
+                    name: event.target.value,
+                  })
                 }
                 placeholder="Student's full name"
               />
             </label>
+
             <label>
               Contact email *
               <input
@@ -1026,41 +1130,57 @@ const submitRegistration = async (event) => {
                 type="email"
                 value={scholarship.email}
                 onChange={(event) =>
-                  setScholarship({ ...scholarship, email: event.target.value })
+                  setScholarship({
+                    ...scholarship,
+                    email: event.target.value,
+                  })
                 }
                 placeholder="you@example.com"
               />
             </label>
+
             <label>
               Current class / year
               <input
                 value={scholarship.schoolYear}
                 onChange={(event) =>
-                  setScholarship({ ...scholarship, schoolYear: event.target.value })
+                  setScholarship({
+                    ...scholarship,
+                    schoolYear: event.target.value,
+                  })
                 }
                 placeholder="Class or year of study"
               />
             </label>
+
             <label>
               What support are you looking for?
               <textarea
                 rows="3"
                 value={scholarship.reason}
                 onChange={(event) =>
-                  setScholarship({ ...scholarship, reason: event.target.value })
+                  setScholarship({
+                    ...scholarship,
+                    reason: event.target.value,
+                  })
                 }
                 placeholder="Please do not include sensitive financial or identity documents here."
               />
             </label>
+
             <button className="button button-green button-full" type="submit">
               Preview interest submission <ArrowUpRight size={17} />
             </button>
+
             <p className="form-small">
               No documents are requested or stored here. A real scholarship
               process needs published eligibility criteria, a secure backend
               and restricted reviewer access.
             </p>
-            {notice && <p className="form-notice" role="status">{notice}</p>}
+
+            {notice && (
+              <p className="form-notice" role="status">{notice}</p>
+            )}
           </form>
         </Modal>
       )}
