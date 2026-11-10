@@ -1,5 +1,3 @@
-
-
 import { useEffect, useState } from "react";
 
 import Admin from "./Admin";
@@ -274,7 +272,7 @@ function HomePage() {
   });
 
 
-
+const [contactSubmitting, setContactSubmitting] = useState(false);
   const [scholarship, setScholarship] = useState({
 
     name: "",
@@ -545,17 +543,66 @@ function HomePage() {
 
 
 
-  const submitContact = (event) => {
+  const submitContact = async (event) => {
+  event.preventDefault();
+  setNotice("");
 
-    event.preventDefault();
+  if (contactSubmitting) return;
+
+  if (!API_URL) {
+    setNotice("Server address is not configured. Please try again later.");
+    return;
+  }
+
+  if (
+    !contact.name.trim() ||
+    !contact.email.trim() ||
+    !contact.message.trim()
+  ) {
+    setNotice("Please fill in all the fields.");
+    return;
+  }
+
+  try {
+    setContactSubmitting(true);
+
+    const response = await fetch(`${API_URL}/api/contact`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: contact.name.trim(),
+        email: contact.email.trim(),
+        message: contact.message.trim(),
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || "Could not send your message.");
+    }
 
     setNotice(
-
-      "Demo only: this message has not been sent. We will connect this form to a secure contact service later."
-
+      data.message ||
+        "Your message has been submitted successfully. Thank you!"
     );
 
-  };
+    setContact({
+      name: "",
+      email: "",
+      message: "",
+    });
+  } catch (error) {
+    console.error("Contact form error:", error);
+    setNotice(
+      error.message || "Could not connect to the server. Please try again."
+    );
+  } finally {
+    setContactSubmitting(false);
+  }
+};
 
 
 
@@ -1798,19 +1845,28 @@ function HomePage() {
 
 
 
-              <button className="button button-green button-full" type="submit">
+              <button
+  className="button button-green button-full"
+  type="submit"
+  disabled={contactSubmitting}
+>
+  {contactSubmitting ? (
+    "Sending..."
+  ) : (
+    <>
+      Send message <ArrowUpRight size={17} />
+    </>
+  )}
+</button>
 
-                Send message <ArrowUpRight size={17} />
-
-              </button>
 
 
+              
+               <p className="form-small">
+  Your message will be saved for the association administrators to review.
+  It will not automatically be sent by email.
+</p>
 
-              <p className="form-small">
-
-                Prototype form: your message is not sent or stored yet.
-
-              </p>
 
 
 

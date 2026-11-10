@@ -11,13 +11,16 @@ const jwt = require("jsonwebtoken");
 const crypto = require("node:crypto");
 
 const Alumni = require("./models/Alumni");
+const ContactMessage = require("./models/ContactMessage");
 const { upload } = require("./config/cloudinary");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ==========================================
 // MIDDLEWARE
-// MIDDLEWARE - ALLOW LOCAL AND DEPLOYED FRONTENDS
+// ==========================================
+
 const allowedOrigins = [
   process.env.CLIENT_URL?.replace(/\/+$/, ""),
   "http://localhost:5173",
@@ -27,7 +30,10 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ""))) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin.replace(/\/+$/, ""))
+      ) {
         return callback(null, true);
       }
 
@@ -38,7 +44,10 @@ app.use(
 
 app.use(express.json({ limit: "20kb" }));
 
+// ==========================================
 // ADMIN AUTHENTICATION
+// ==========================================
+
 function requireAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
 
@@ -78,7 +87,10 @@ function requireAdmin(req, res, next) {
   }
 }
 
+// ==========================================
 // PHOTO UPLOAD ERROR HANDLING
+// ==========================================
+
 function handlePhotoUpload(req, res, next) {
   upload.single("photo")(req, res, (error) => {
     if (!error) {
@@ -101,7 +113,10 @@ function handlePhotoUpload(req, res, next) {
   });
 }
 
+// ==========================================
 // ADMIN LOGIN
+// ==========================================
+
 app.post("/api/admin/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -169,7 +184,10 @@ app.post("/api/admin/login", async (req, res) => {
   }
 });
 
-// ALUMNI REGISTRATION WITH PHOTO DIAGNOSTICS
+// ==========================================
+// ALUMNI REGISTRATION WITH PHOTO UPLOAD
+// ==========================================
+
 app.post(
   "/api/alumni/register",
   handlePhotoUpload,
@@ -186,7 +204,6 @@ app.post(
         consent,
       } = req.body;
 
-      // DIAGNOSTIC: checks whether the upload middleware received a photo.
       console.log("PHOTO UPLOAD CHECK:", {
         fileReceived: Boolean(req.file),
         photoUrlSavedFromUpload: Boolean(req.file?.path),
@@ -244,7 +261,6 @@ app.post(
       const photoUrl = req.file?.path || "";
       const photoPublicId = req.file?.filename || "";
 
-      // Log only whether photo details exist, not personal data.
       console.log("SAVING ALUMNI PHOTO:", {
         hasPhotoUrl: Boolean(photoUrl),
         hasPhotoPublicId: Boolean(photoPublicId),
@@ -311,7 +327,10 @@ app.post(
   }
 );
 
+// ==========================================
 // PUBLIC: VIEW APPROVED ALUMNI
+// ==========================================
+
 app.get("/api/alumni/approved", async (req, res) => {
   try {
     const alumni = await Alumni.find({
@@ -340,7 +359,10 @@ app.get("/api/alumni/approved", async (req, res) => {
   }
 });
 
+// ==========================================
 // ADMIN: VIEW PENDING ALUMNI REGISTRATIONS
+// ==========================================
+
 app.get("/api/admin/alumni/pending", requireAdmin, async (req, res) => {
   try {
     const alumni = await Alumni.find({ status: "pending" })
@@ -366,7 +388,10 @@ app.get("/api/admin/alumni/pending", requireAdmin, async (req, res) => {
   }
 });
 
-// ADMIN: APPROVE OR REJECT AN ALUMNI REGISTRATION
+// ==========================================
+// ADMIN: APPROVE OR REJECT ALUMNI
+// ==========================================
+
 app.patch(
   "/api/admin/alumni/:id/status",
   requireAdmin,
@@ -420,7 +445,146 @@ app.patch(
   }
 );
 
+// ==========================================
+// PUBLIC: SUBMIT CONTACT MESSAGE
+// ==========================================
+
+app.post("/api/contact", async (req, res) => {
+  try {
+    const { name, email, message } = req.body;
+
+    if (
+      typeof name !== "string" ||
+      typeof email !== "string" ||
+      typeof message !== "string" ||
+      !name.trim() ||
+      !email.trim() ||
+      !message.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete all contact form fields.",
+      });
+    }
+
+    if (
+      name.trim().length > 100 ||
+      email.trim().length > 254 ||
+      message.trim().length > 3000 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please check your contact details and try again.",
+      });
+    }
+
+    const savedMessage = await ContactMessage.create({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      message: message.trim(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Your message has been submitted successfully.",
+      id: savedMessage._id,
+    });
+  } catch (error) {
+    console.error("Contact submission error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to submit your message right now.",
+    });
+  }
+});
+
+// ==========================================
+// ADMIN: VIEW CONTACT MESSAGES
+// ==========================================
+
+app.get("/api/admin/messages", requireAdmin, async (req, res) => {
+  try {
+    const messages = await ContactMessage.find()
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    return res.json({
+      success: true,
+      count: messages.length,
+      messages,
+    });
+  } catch (error) {
+    console.error("Contact messages fetch error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load contact messages.",
+    });
+  }
+});
+
+// ==========================================
+// ADMIN: MARK MESSAGE READ OR UNREAD
+// ==========================================
+
+app.patch(
+  "/api/admin/messages/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid message ID.",
+        });
+      }
+
+      if (!["read", "unread"].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Status must be read or unread.",
+        });
+      }
+
+      const updatedMessage = await ContactMessage.findByIdAndUpdate(
+        id,
+        { $set: { status } },
+        { returnDocument: "after", runValidators: true }
+      );
+
+      if (!updatedMessage) {
+        return res.status(404).json({
+          success: false,
+          message: "Message not found.",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Message status updated.",
+        contactMessage: updatedMessage,
+      });
+    } catch (error) {
+      console.error("Contact message update error:", error.message);
+
+      return res.status(500).json({
+        success: false,
+        message: "Unable to update message status.",
+      });
+    }
+  }
+);
+
+// ==========================================
 // HOME ROUTE
+// ==========================================
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -428,7 +592,10 @@ app.get("/", (req, res) => {
   });
 });
 
+// ==========================================
 // HEALTH CHECK
+// ==========================================
+
 app.get("/api/health", (req, res) => {
   return res.json({
     success: true,
@@ -440,7 +607,10 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// ==========================================
 // START SERVER AND CONNECT TO MONGODB
+// ==========================================
+
 async function startServer() {
   app.listen(PORT, () => {
     console.log(`Backend running at http://localhost:${PORT}`);
